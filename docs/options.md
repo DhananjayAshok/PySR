@@ -16,6 +16,7 @@ may find useful include:
 - `variable_names` (or pandas input)
 - Constraining operator complexity
 - LaTeX, SymPy, and callable equation output
+- `loss`
 
 These are described below
 
@@ -158,3 +159,39 @@ for the best equation, using the `score` column to sort equations.
 `best_latex()` returns the LaTeX form of this, and `best_callable()`
 returns a callable function.
 
+## `loss`
+
+The default loss is mean-square error, and weighted mean-square error.
+One can pass an arbitrary Julia string to define a custom loss, using,
+e.g., `loss="myloss(x, y) = abs(x - y)^1.5"`. For more details,
+see the
+[Losses](https://milescranmer.github.io/SymbolicRegression.jl/dev/losses/)
+page for SymbolicRegression.jl.
+
+Here are some additional examples:
+
+abs(x-y) loss
+```python
+pysr(..., loss="f(x, y) = abs(x - y)^1.5")
+```
+Note that the function name doesn't matter:
+```python
+pysr(..., loss="loss(x, y) = abs(x * y)")
+```
+With weights:
+```python
+pysr(..., weights=weights, loss="myloss(x, y, w) = w * abs(x - y)") 
+```
+Weights can be used in arbitrary ways:
+```python
+pysr(..., weights=weights, loss="myloss(x, y, w) = abs(x - y)^2/w^2")
+```
+Built-in loss (faster) (see [losses](https://astroautomata.com/SymbolicRegression.jl/dev/losses/)).
+This one computes the L3 norm:
+```python
+pysr(..., loss="LPDistLoss{3}()")
+```
+Can also uses these losses for weighted (weighted-average):
+```python
+pysr(..., weights=weights, loss="LPDistLoss{3}()")
+```

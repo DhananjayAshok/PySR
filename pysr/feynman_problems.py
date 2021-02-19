@@ -1,7 +1,11 @@
 import numpy as np
 import csv
 import traceback
-from sr import pysr, best
+from .sr import pysr, best
+from pathlib import Path
+
+PKG_DIR = Path(__file__).parents[1]
+FEYNMAN_DATASET = PKG_DIR / "datasets" / "FeynmanEquations.csv"
 
 class Problem:
     """
@@ -29,16 +33,12 @@ class FeynmanProblem(Problem):
         gen: If true the problem will have dp X and y values randomly generated else they will be None
         """
         self.eq_id      = row['Filename']
-        #self.form       = row['Formula']
         self.n_vars     = int(row['# variables'])
         super(FeynmanProblem, self).__init__(None, None, form=row['Formula'],
                                              variable_names=[row[f'v{i + 1}_name'] for i in range(self.n_vars)])
-        #self.var_names  = [row[f'v{i+1}_name']  for i in range(self.n_vars)]
         self.low        = [float(row[f'v{i+1}_low'])   for i in range(self.n_vars)]
         self.high       = [float(row[f'v{i+1}_high'])  for i in range(self.n_vars)]
-        self.dp         = dp#int(row[f'datapoints'])
-        #self.X = None
-        #self.Y = None
+        self.dp         = dp
         if gen:
             self.X = np.random.uniform(0.01, 25, size=(self.dp, self.n_vars))
             d = {}
@@ -63,7 +63,7 @@ class FeynmanProblem(Problem):
     def __repr__(self):
         return str(self)
 
-    def mk_problems(first=100, gen=False, dp=500, data_dir="datasets/FeynmanEquations.csv"):
+    def mk_problems(first=100, gen=False, dp=500, data_dir=FEYNMAN_DATASET):
         """
 
         first: the first "first" equations from the dataset will be made into problems
@@ -83,7 +83,6 @@ class FeynmanProblem(Problem):
                     ret.append(p)
                 except Exception as e:
                     traceback.print_exc()
-                    #print(row)
                     print(f"FAILED ON ROW {i}")
                 ind += 1
         return ret
@@ -102,8 +101,7 @@ def run_on_problem(problem, verbosity=0, multiprocessing=True):
         others['equations'] = equations
     return str(best(equations)), problem.form, others
 
-
-def do_feynman_experiments_parallel(first=100, verbosity=0, dp=500, output_file_path="experiments/FeynmanExperiment.csv", data_dir="datasets/FeynmanEquations.csv"):
+def do_feynman_experiments_parallel(first=100, verbosity=0, dp=500, output_file_path="FeynmanExperiment.csv", data_dir=FEYNMAN_DATASET):
     import multiprocessing as mp
     from tqdm import tqdm
     problems = FeynmanProblem.mk_problems(first=first, gen=True, dp=dp, data_dir=data_dir)
@@ -131,7 +129,7 @@ def do_feynman_experiments_parallel(first=100, verbosity=0, dp=500, output_file_
             writer.writerow([ids[i], predictions[i], true_equations[i], time_takens[i]])
     return
 
-def do_feynman_experiments(first=100, verbosity=0, dp=500, output_file_path="experiments/FeynmanExperiment.csv", data_dir="datasets/FeynmanEquations.csv"):
+def do_feynman_experiments(first=100, verbosity=0, dp=500, output_file_path="FeynmanExperiment.csv", data_dir=FEYNMAN_DATASET):
     from tqdm import tqdm
 
     problems = FeynmanProblem.mk_problems(first=first, gen=True, dp=dp, data_dir=data_dir)
@@ -152,7 +150,3 @@ def do_feynman_experiments(first=100, verbosity=0, dp=500, output_file_path="exp
         for i in range(len(ids)):
             writer.writerow([ids[i], predictions[i], true_equations[i], time_takens[i]])
     return
-
-
-if __name__ == "__main__":
-    do_feynman_experiments_parallel(first=10)
