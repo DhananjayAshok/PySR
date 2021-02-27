@@ -68,6 +68,7 @@ def pysr(X=None, y=None, weights=None,
             annealing=True,
             fractionReplaced=0.10,
             fractionReplacedHof=0.10,
+            form=None,
             npop=1000,
             parsimony=1e-4,
             migration=True,
@@ -208,8 +209,11 @@ def pysr(X=None, y=None, weights=None,
         should be present from the install.
     :param user_input: Whether to ask for user input or not for installing (to
         be used for automated scripts). Will choose to install when asked.
+    :param form: The formula of the equation for use in Logic Guidance
     :returns: pd.DataFrame, Results dataframe, giving complexity, MSE, and equations
         (as strings).
+
+
 
     """
     if isinstance(X, pd.DataFrame):
@@ -253,7 +257,7 @@ def pysr(X=None, y=None, weights=None,
                  equation_file=equation_file, fast_cycle=fast_cycle,
                  fractionReplaced=fractionReplaced,
                  ncyclesperiteration=ncyclesperiteration,
-                 niterations=niterations, npop=npop,
+                 niterations=niterations, form=form,npop=npop,
                  topn=topn, verbosity=verbosity, update=update,
                  julia_optimization=julia_optimization, timeout=timeout,
                  fractionReplacedHof=fractionReplacedHof,
@@ -382,12 +386,20 @@ def _make_datasets_julia_str(X, X_filename, weights, weights_filename, y, y_file
     np.savetxt(y_filename, y.reshape(-1, 1).astype(np.float32), delimiter=',')
     if weights is not None:
         np.savetxt(weights_filename, weights.reshape(-1, 1), delimiter=',')
+    form_string = ""
+    var_string = ""
+    if kwargs["form"] is not None and kwargs["variable_names"] != []:
+        form_string = kwargs["form"]
+        var_string = f"{kwargs[variable_names]}"
     def_datasets += f"""
 X = copy(transpose(readdlm("{_escape_filename(X_filename)}", ',', Float32, '\\n')))
 y = readdlm("{_escape_filename(y_filename)}", ',', Float32, '\\n')[:, 1]"""
     if weights is not None:
         def_datasets += f"""
-weights = readdlm("{_escape_filename(weights_filename)}", ',', Float32, '\\n')[:, 1]"""
+weights = readdlm("{_escape_filename(weights_filename)}", ',', Float32, '\\n')[:, 1]
+form = "{form_string}"
+variable_names = "{var_string}"
+"""
     return def_datasets
 
 def _make_hyperparams_julia_str(X, alpha, annealing, batchSize, batching, binary_operators, constraints_str,

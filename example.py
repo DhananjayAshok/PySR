@@ -12,7 +12,7 @@ equations = pysr(X, y, niterations=5,
       "cos", "exp", "sin", #Pre-defined library of operators (see https://pysr.readthedocs.io/en/latest/docs/operators/)
       "inv(x) = 1/x"],
     loss='loss(x, y) = abs(x - y)', # Custom loss function
-    julia_project="../SymbolicRegression.jl") # Define your own operator! (Julia syntax)
+    julia_project="/home/dhananjay/LGGA/SymbolicRegression.jl") # Define your own operator! (Julia syntax)
 
 ...# (you can use ctl-c to exit early)
 

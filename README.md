@@ -60,6 +60,8 @@ pip install pysr
 The first launch will automatically install the Julia packages
 required.
 
+For python, you need to have Python 3, numpy, sympy, and pandas installed. For the LGGA extension to this tool you will need scikit-learn installed as well. 
+
 # Quickstart
 
 Here is some demo code (also found in `example.py`)
