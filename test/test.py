@@ -1,5 +1,6 @@
 import numpy as np
 from pysr import pysr
+import sympy
 X = np.random.randn(100, 5)
 
 print("Test 1 - defaults; simple linear relation")
@@ -27,6 +28,5 @@ equations = pysr(X, y,
                  unary_operators=[], binary_operators=["plus"],
                  niterations=10,
                  user_input=False)
-
 print(equations)
 assert equations.iloc[-1]['MSE'] < 1e-4

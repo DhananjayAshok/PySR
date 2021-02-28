@@ -12,7 +12,7 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 import warnings
-
+from .export import sympy2jax
 
 global_equation_file = 'hall_of_fame.csv'
 global_n_features = None
@@ -47,13 +47,12 @@ sympy_mappings = {
     'erf':  lambda x    : sympy.erf(x),
     'erfc': lambda x    : sympy.erfc(x),
     'logm': lambda x    : sympy.log(abs(x)),
-    'logm10':lambda x    : sympy.log10(abs(x)),
-    'logm2': lambda x    : sympy.log2(abs(x)),
+    'logm10':lambda x    : sympy.log(abs(x), 10),
+    'logm2': lambda x    : sympy.log(abs(x), 2),
     'log1p': lambda x    : sympy.log(x + 1),
     'floor': lambda x    : sympy.floor(x),
     'ceil': lambda x    : sympy.ceil(x),
     'sign': lambda x    : sympy.sign(x),
-    'round': lambda x    : sympy.round(x),
 }
 
 def pysr(X=None, y=None, weights=None,
@@ -89,6 +88,7 @@ def pysr(X=None, y=None, weights=None,
             equation_file=None,
             test='simple1',
             verbosity=1e9,
+            progress=False,
             maxsize=20,
             fast_cycle=False,
             maxdepth=None,
@@ -96,7 +96,7 @@ def pysr(X=None, y=None, weights=None,
             batching=False,
             batchSize=50,
             select_k_features=None,
-            warmupMaxsize=0,
+            warmupMaxsizeBy=0.0,
             constraints={},
             useFrequency=False,
             tempdir=None,
@@ -104,7 +104,10 @@ def pysr(X=None, y=None, weights=None,
             julia_optimization=3,
             julia_project=None,
             user_input=True,
-            update=True
+            update=True,
+            temp_equation_file=False,
+            output_jax_format=False,
+            warmupMaxsize=None, #Deprecated
         ):
     """Run symbolic regression to fit f(X[i, :]) ~ y[i] for all i.
     Note: most default parameters have been tuned over several example
@@ -171,6 +174,8 @@ def pysr(X=None, y=None, weights=None,
     :param timeout: float, Time in seconds to timeout search
     :param equation_file: str, Where to save the files (.csv separated by |)
     :param test: str, What test to run, if X,y not passed.
+    :param verbosity: int, What verbosity level to use. 0 means minimal print statements.
+    :param progress: bool, Whether to use a progress bar instead of printing to stdout.
     :param maxsize: int, Max size of an equation.
     :param maxdepth: int, Max depth of an equation. You can use both maxsize and maxdepth.
         maxdepth is by default set to = maxsize, which means that it is redundant.
@@ -187,10 +192,10 @@ def pysr(X=None, y=None, weights=None,
         Python using random forests, before passing to the symbolic regression
         code. None means no feature selection; an int means select that many
         features.
-    :param warmupMaxsize: int, whether to slowly increase max size from
+    :param warmupMaxsizeBy: float, whether to slowly increase max size from
         a small number up to the maxsize (if greater than 0).
-        If greater than 0, says how many cycles before the maxsize
-        is increased.
+        If greater than 0, says the fraction of training time at which
+        the current maxsize will reach the user-passed maxsize.
     :param constraints: dict of int (unary) or 2-tuples (binary),
         this enforces maxsize constraints on the individual
         arguments of operators. E.g., `'pow': (-1, 1)`
@@ -208,10 +213,17 @@ def pysr(X=None, y=None, weights=None,
         should be present from the install.
     :param user_input: Whether to ask for user input or not for installing (to
         be used for automated scripts). Will choose to install when asked.
+    :param update: Whether to automatically update Julia packages.
+    :param temp_equation_file: Whether to put the hall of fame file in
+        the temp directory. Deletion is then controlled with the
+        delete_tempfiles argument.
+    :param output_jax_format: Whether to create a 'jax_format' column in the output,
+        containing jax-callable functions and the default parameters in a jax array.
     :returns: pd.DataFrame, Results dataframe, giving complexity, MSE, and equations
         (as strings).
 
     """
+    assert warmupMaxsize == None, "warmupMaxsize is deprecated. Use warmupMaxsizeBy and give a fraction of time."
     if isinstance(X, pd.DataFrame):
         variable_names = list(X.columns)
         X = np.array(X)
@@ -235,9 +247,6 @@ def pysr(X=None, y=None, weights=None,
 
     if maxdepth is None:
         maxdepth = maxsize
-    if equation_file is None:
-        date_time = datetime.now().strftime("%Y-%m-%d_%H%M%S.%f")[:-3]
-        equation_file = 'hall_of_fame_' + date_time + '.csv'
     if populations is None:
         populations = procs
     if isinstance(binary_operators, str):
@@ -250,11 +259,11 @@ def pysr(X=None, y=None, weights=None,
     kwargs = dict(X=X, y=y, weights=weights,
                 alpha=alpha, annealing=annealing, batchSize=batchSize,
                  batching=batching, binary_operators=binary_operators,
-                 equation_file=equation_file, fast_cycle=fast_cycle,
+                 fast_cycle=fast_cycle,
                  fractionReplaced=fractionReplaced,
                  ncyclesperiteration=ncyclesperiteration,
-                 niterations=niterations, npop=npop,
-                 topn=topn, verbosity=verbosity, update=update,
+                 niterations=niterations, npop=npop, topn=topn,
+                 verbosity=verbosity, progress=progress, update=update,
                  julia_optimization=julia_optimization, timeout=timeout,
                  fractionReplacedHof=fractionReplacedHof,
                  hofMigration=hofMigration, maxdepth=maxdepth,
@@ -264,7 +273,7 @@ def pysr(X=None, y=None, weights=None,
                  shouldOptimizeConstants=shouldOptimizeConstants,
                  unary_operators=unary_operators, useFrequency=useFrequency,
                  use_custom_variable_names=use_custom_variable_names,
-                 variable_names=variable_names, warmupMaxsize=warmupMaxsize,
+                 variable_names=variable_names, warmupMaxsizeBy=warmupMaxsizeBy,
                  weightAddNode=weightAddNode,
                  weightDeleteNode=weightDeleteNode,
                  weightDoNothing=weightDoNothing,
@@ -275,9 +284,19 @@ def pysr(X=None, y=None, weights=None,
                  weightSimplify=weightSimplify,
                  constraints=constraints,
                  extra_sympy_mappings=extra_sympy_mappings,
-                 julia_project=julia_project, loss=loss)
+                 julia_project=julia_project, loss=loss,
+                 output_jax_format=output_jax_format)
 
     kwargs = {**_set_paths(tempdir), **kwargs}
+
+    if temp_equation_file:
+        equation_file = kwargs['tmpdir'] / f'hall_of_fame.csv'
+    elif equation_file is None:
+        date_time = datetime.now().strftime("%Y-%m-%d_%H%M%S.%f")[:-3]
+        equation_file = 'hall_of_fame_' + date_time + '.csv'
+
+    kwargs = {**dict(equation_file=equation_file), **kwargs}
+
 
     pkg_directory = kwargs['pkg_directory']
     kwargs['need_install'] = False
@@ -299,10 +318,13 @@ def pysr(X=None, y=None, weights=None,
     _final_pysr_process(**kwargs)
     _set_globals(**kwargs)
 
+    equations = get_hof(**kwargs)
+
     if delete_tempfiles:
         shutil.rmtree(kwargs['tmpdir'])
 
-    return get_hof(**kwargs)
+    return equations
+
 
 
 def _set_globals(X, equation_file, extra_sympy_mappings, variable_names, **kwargs):
@@ -333,7 +355,13 @@ def _cmd_runner(command, **kwargs):
         while True:
             line = process.stdout.readline()
             if not line: break
-            print(line.decode('utf-8').replace('\n', ''))
+            decoded_line = (line.decode('utf-8')
+                                .replace('\\033[K',  '\033[K')
+                                .replace('\\033[1A', '\033[1A')
+                                .replace('\\033[1B', '\033[1B')
+                                .replace('\\r',      '\r'))
+            print(decoded_line, end='')
+
 
         process.stdout.close()
         process.wait()
@@ -395,10 +423,14 @@ def _make_hyperparams_julia_str(X, alpha, annealing, batchSize, batching, binary
                                maxdepth, maxsize, migration, nrestarts, npop,
                                parsimony, perturbationFactor, populations, procs, shouldOptimizeConstants,
                                unary_operators, useFrequency, use_custom_variable_names,
-                               variable_names, warmupMaxsize, weightAddNode,
-                               ncyclesperiteration, fractionReplaced, topn, verbosity, loss,
+                               variable_names, warmupMaxsizeBy, weightAddNode,
+                               ncyclesperiteration, fractionReplaced, topn, verbosity, progress, loss,
                                weightDeleteNode, weightDoNothing, weightInsertNode, weightMutateConstant,
                                weightMutateOperator, weightRandomize, weightSimplify, weights, **kwargs):
+    try:
+        term_width = shutil.get_terminal_size().columns
+    except:
+        _, term_width = subprocess.check_output(['stty', 'size']).split()
     def tuple_fix(ops):
         if len(ops) > 1:
             return ', '.join(ops)
@@ -439,7 +471,7 @@ migration={'true' if migration else 'false'},
 hofMigration={'true' if hofMigration else 'false'},
 fractionReplacedHof={fractionReplacedHof}f0,
 shouldOptimizeConstants={'true' if shouldOptimizeConstants else 'false'},
-hofFile="{equation_file}",
+hofFile="{_escape_filename(equation_file)}",
 npopulations={populations:d},
 nrestarts={nrestarts:d},
 perturbationFactor={perturbationFactor:f}f0,
@@ -456,13 +488,15 @@ mutationWeights=[
     {weightRandomize:f},
     {weightDoNothing:f}
 ],
-warmupMaxsize={warmupMaxsize:d},
+warmupMaxsizeBy={warmupMaxsizeBy:f}f0,
 useFrequency={"true" if useFrequency else "false"},
 npop={npop:d},
 ncyclesperiteration={ncyclesperiteration:d},
 fractionReplaced={fractionReplaced:f}f0,
 topn={topn:d},
-verbosity=round(Int32, {verbosity:f})
+verbosity=round(Int32, {verbosity:f}),
+progress={'true' if progress else 'false'},
+terminal_width={term_width:d}
 """
 
     def_hyperparams += '\n)'
@@ -603,7 +637,8 @@ def run_feature_selection(X, y, select_k_features):
             max_features=select_k_features, prefit=True)
     return selector.get_support(indices=True)
 
-def get_hof(equation_file=None, n_features=None, variable_names=None, extra_sympy_mappings=None, **kwargs):
+def get_hof(equation_file=None, n_features=None, variable_names=None,
+            extra_sympy_mappings=None, output_jax_format=False, **kwargs):
     """Get the equations from a hall of fame file. If no arguments
     entered, the ones used previously from a call to PySR will be used."""
 
@@ -623,7 +658,7 @@ def get_hof(equation_file=None, n_features=None, variable_names=None, extra_symp
     global_extra_sympy_mappings = extra_sympy_mappings
 
     try:
-        output = pd.read_csv(equation_file + '.bkup', sep="|")
+        output = pd.read_csv(str(equation_file) + '.bkup', sep="|")
     except FileNotFoundError:
         print("Couldn't find equation file!")
         return pd.DataFrame()
@@ -633,6 +668,8 @@ def get_hof(equation_file=None, n_features=None, variable_names=None, extra_symp
     lastComplexity = 0
     sympy_format = []
     lambda_format = []
+    if output_jax_format:
+        jax_format = []
     use_custom_variable_names = (len(variable_names) != 0)
     local_sympy_mappings = {
             **extra_sympy_mappings,
@@ -647,6 +684,9 @@ def get_hof(equation_file=None, n_features=None, variable_names=None, extra_symp
     for i in range(len(output)):
         eqn = sympify(output.loc[i, 'Equation'], locals=local_sympy_mappings)
         sympy_format.append(eqn)
+        if output_jax_format:
+            func, params = sympy2jax(eqn, sympy_symbols)
+            jax_format.append({'callable': func, 'parameters': params})
         lambda_format.append(lambdify(sympy_symbols, eqn))
         curMSE = output.loc[i, 'MSE']
         curComplexity = output.loc[i, 'Complexity']
@@ -663,8 +703,12 @@ def get_hof(equation_file=None, n_features=None, variable_names=None, extra_symp
     output['score'] = np.array(scores)
     output['sympy_format'] = sympy_format
     output['lambda_format'] = lambda_format
+    output_cols = ['Complexity', 'MSE', 'score', 'Equation', 'sympy_format', 'lambda_format']
+    if output_jax_format:
+        output_cols += ['jax_format']
+        output['jax_format'] = jax_format
 
-    return output[['Complexity', 'MSE', 'score', 'Equation', 'sympy_format', 'lambda_format']]
+    return output[output_cols]
 
 def best_row(equations=None):
     """Return the best row of a hall of fame file using the score column.
