@@ -390,15 +390,16 @@ def _make_datasets_julia_str(X, X_filename, weights, weights_filename, y, y_file
     var_string = ""
     if kwargs["form"] is not None and kwargs["variable_names"] != []:
         form_string = kwargs["form"]
-        var_string = f"{kwargs[variable_names]}"
+        var_string = f"{kwargs['variable_names']}"
     def_datasets += f"""
 X = copy(transpose(readdlm("{_escape_filename(X_filename)}", ',', Float32, '\\n')))
-y = readdlm("{_escape_filename(y_filename)}", ',', Float32, '\\n')[:, 1]"""
+y = readdlm("{_escape_filename(y_filename)}", ',', Float32, '\\n')[:, 1]
+form = "{form_string}"
+variable_names = {var_string}
+"""
     if weights is not None:
         def_datasets += f"""
 weights = readdlm("{_escape_filename(weights_filename)}", ',', Float32, '\\n')[:, 1]
-form = "{form_string}"
-variable_names = "{var_string}"
 """
     return def_datasets
 

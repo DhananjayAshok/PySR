@@ -7,6 +7,7 @@ y = 2*np.cos(X[:, 3]) + X[:, 0]**2 - 2
 
 # Learn equations
 equations = pysr(X, y, niterations=5,
+        form="2*cos(d) + a^2 -2", variable_names = ["a", "b", "c", "d", "e"],
     binary_operators=["plus", "mult"],
     unary_operators=[
       "cos", "exp", "sin", #Pre-defined library of operators (see https://pysr.readthedocs.io/en/latest/docs/operators/)
